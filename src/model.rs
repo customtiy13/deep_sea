@@ -1,4 +1,4 @@
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum NavigationalStatus {
     #[serde(rename = "Unknown value")]
     Unknown,
@@ -28,7 +28,7 @@ pub enum NavigationalStatus {
     Other,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum ShipType {
     Tanker,
     Cargo,
@@ -62,12 +62,12 @@ pub enum ShipType {
     Undefined,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum DataSource {
     AIS,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 //1.	Timestamp			Timestamp from the AIS basestation, format: 31/12/2015 23:59:59
 //2.	Type of mobile			Describes what type of target this message is received from (class A AIS Vessel, Class B AIS vessel, etc)
 //3.	MMSI				MMSI number of vessel

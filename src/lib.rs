@@ -5,8 +5,13 @@ use clap::{Arg, ArgAction, Command};
 use model::Record;
 use model::{NavigationalStatus, ShipType};
 use rayon::prelude::*;
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::Path;
+use log::{info, error, debug};
+
+static OUT_DIR: &str = "dist";
 
 static LOW_LAT: f64 = 55.5;
 static LOW_LON: f64 = 10.3;
@@ -16,6 +21,7 @@ static HIGH_LON: f64 = 13.0;
 #[derive(Debug)]
 pub struct Config {
     paths: Vec<String>,
+    is_to_write: bool,
 }
 
 pub fn get_arg() -> Result<Config> {
@@ -26,10 +32,17 @@ pub fn get_arg() -> Result<Config> {
         .arg(
             Arg::new("paths")
                 .short('f')
-                .long("file-path")
+                .long("paths")
                 .action(ArgAction::Append)
                 .required(true)
                 .help("get file path to parse"),
+        )
+        .arg(
+            Arg::new("flag")
+                .short('w')
+                .long("flag")
+                .action(ArgAction::SetTrue)
+                .help("should write output files to dir"),
         )
         .get_matches();
 
@@ -38,52 +51,66 @@ pub fn get_arg() -> Result<Config> {
         .unwrap_or_default()
         .cloned()
         .collect::<Vec<String>>();
+
+    let is_to_write = matches.get_flag("flag");
     //pass
-    Ok(Config { paths: files })
+    Ok(Config {
+        paths: files,
+        is_to_write,
+    })
 }
 
 pub fn run(config: Config) -> Result<()> {
-    println!("config is {:?}", config);
+    info!("config is {:?}", config);
+
+    // create write directory.
+    if !Path::new(OUT_DIR).try_exists()? {
+        fs::create_dir(OUT_DIR)?;
+    }
 
     let ret: Result<()> = config
         .paths
         .par_iter()
-        .map(|x| process_file(x))
+        .map(|x| process_file(x, config.is_to_write))
         .collect::<Result<_>>();
 
     return ret;
 }
 
-pub fn process_file(path: &str) -> Result<()> {
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("failed to open file {}: {}. skipping", path, e);
-            return Err(e.into());
-        }
-    };
-
+pub fn process_file(path: &str, is_to_write: bool) -> Result<()> {
+    let path = Path::new(path);
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
-        .from_reader(file);
+        .from_path(path)?;
+    let output_file = Path::new(OUT_DIR).join(format!(
+        "{}_new",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    ));
+
+    info!("output file is {:?}", output_file);
+    let mut wtr = csv::Writer::from_path(output_file)?;
 
     let mut count = 0;
 
     for result in rdr.deserialize().skip(1) {
         let record: Record = result?;
-        let is_valid: bool = is_valid_record(&record);
-        // skip this one.
-        if is_valid == false {
+        if !is_valid_record(&record) {
             continue;
         }
-        //println!("lat:{}, lon:{}", record.lat, record.lon);
-        //println!("ship type is {:?}", record.ship_type);
-        //println!("record is {:?}", record);
-        //println!("data source is {:?}", record.data_source);
+        //debug!("lat:{}, lon:{}", record.lat, record.lon);
+        //debug!("ship type is {:?}", record.ship_type);
+        //debug!("record is {:?}", record);
+        //debug!("data source is {:?}", record.data_source);
+
+        if is_to_write {
+            wtr.serialize(record)?;
+        }
+
         count += 1;
     }
 
-    println!("{} has {} records passed.", path, count);
+    wtr.flush()?;
+    info!("{:?} has {} records passed.", path, count);
 
     Ok(())
 }

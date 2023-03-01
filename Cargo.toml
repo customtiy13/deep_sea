@@ -9,6 +9,8 @@ edition = "2021"
 anyhow = "1.0.69"
 clap = "4.1.8"
 csv = "1.2.0"
+env_logger = "0.10.0"
 file = "1.1.2"
+log = "0.4.17"
 rayon = "1.6.1"
 serde = { version = "1.0.152", features= ["derive"]}
