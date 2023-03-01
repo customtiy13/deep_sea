@@ -2,16 +2,18 @@ mod model;
 
 use anyhow::{Error, Result};
 use clap::{Arg, ArgAction, Command};
+use log::{debug, error, info};
 use model::Record;
-use model::{NavigationalStatus, ShipType};
+use model::{NavigationalStatus, STPoint, ShipType, Trajectory};
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use log::{info, error, debug};
 
 static OUT_DIR: &str = "dist";
+static OUT_FILE_SUFFIX: &str = "new";
 
 static LOW_LAT: f64 = 55.5;
 static LOW_LON: f64 = 10.3;
@@ -63,32 +65,50 @@ pub fn get_arg() -> Result<Config> {
 pub fn run(config: Config) -> Result<()> {
     info!("config is {:?}", config);
 
-    // create write directory.
+    // create output directory.
     if !Path::new(OUT_DIR).try_exists()? {
         fs::create_dir(OUT_DIR)?;
     }
 
-    let ret: Result<()> = config
+    // mmsi: trajectory
+    let mut traces: HashMap<String, Trajectory> = HashMap::new();
+
+    let ret: Result<Vec<HashMap<String, Trajectory>>> = config
         .paths
         .par_iter()
         .map(|x| process_file(x, config.is_to_write))
         .collect::<Result<_>>();
 
-    return ret;
+    let ret = match ret {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("processing files failed. {e}");
+            return Err(e);
+        }
+    };
+
+    debug!("ret has {} maps", ret.len());
+
+    // toDO
+
+    return Ok(());
 }
 
-pub fn process_file(path: &str, is_to_write: bool) -> Result<()> {
+pub fn process_file(path: &str, is_to_write: bool) -> Result<HashMap<String, Trajectory>> {
     let path = Path::new(path);
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_path(path)?;
     let output_file = Path::new(OUT_DIR).join(format!(
-        "{}_new",
-        path.file_name().unwrap_or_default().to_string_lossy()
+        "{}_{}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        OUT_FILE_SUFFIX,
     ));
 
     info!("output file is {:?}", output_file);
     let mut wtr = csv::Writer::from_path(output_file)?;
+
+    let mut maps: HashMap<String, Trajectory> = HashMap::new();
 
     let mut count = 0;
 
@@ -102,8 +122,31 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<()> {
         //debug!("record is {:?}", record);
         //debug!("data source is {:?}", record.data_source);
 
-        if is_to_write {
-            wtr.serialize(record)?;
+        //if is_to_write {
+        //wtr.serialize(record)?;
+        //}
+        //
+        let mmsi = record.mmsi;
+        let point = STPoint {
+            timestamp: record.timestamp,
+            lat: record.lat,
+            lon: record.lon,
+            sog: record.sog.unwrap(), // safe to unwrap. already checked.
+            cog: record.cog.unwrap(),
+        };
+
+        match maps.get_mut(&mmsi) {
+            Some(v) => {
+                v.trace.push(point);
+            }
+            None => {
+                let tra = Trajectory {
+                    mmsi: mmsi.to_string(),
+                    ship_type: record.ship_type,
+                    trace: vec![point],
+                };
+                maps.insert(mmsi, tra);
+            }
         }
 
         count += 1;
@@ -112,7 +155,7 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<()> {
     wtr.flush()?;
     info!("{:?} has {} records passed.", path, count);
 
-    Ok(())
+    Ok(maps)
 }
 
 fn is_valid_record(record: &Record) -> bool {
