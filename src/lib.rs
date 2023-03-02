@@ -1,10 +1,12 @@
 mod model;
 
 use anyhow::{Error, Result};
+use chrono::format::ParseError;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use clap::{Arg, ArgAction, Command};
 use log::{debug, error, info};
 use model::Record;
-use model::{NavigationalStatus, STPoint, ShipType, Trajectory};
+use model::{CRecord, NavigationalStatus, STPoint, ShipType, Trajectory};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs;
@@ -14,6 +16,7 @@ use std::path::Path;
 
 static OUT_DIR: &str = "dist";
 static OUT_FILE_SUFFIX: &str = "new";
+static INTERVAL: i64 = 2 * 60 * 60 * 1000;
 
 static LOW_LAT: f64 = 55.5;
 static LOW_LON: f64 = 10.3;
@@ -70,26 +73,28 @@ pub fn run(config: Config) -> Result<()> {
         fs::create_dir(OUT_DIR)?;
     }
 
-    // mmsi: trajectory
-    let mut traces: HashMap<String, Trajectory> = HashMap::new();
-
     let ret: Result<Vec<HashMap<String, Trajectory>>> = config
         .paths
         .par_iter()
         .map(|x| process_file(x, config.is_to_write))
         .collect::<Result<_>>();
 
-    let ret = match ret {
+    let maps = match ret {
         Ok(v) => v,
         Err(e) => {
             debug!("processing files failed. {e}");
             return Err(e);
         }
     };
+    debug!("ret has {} maps", maps.len());
+    //merge_maps(maps);
 
-    debug!("ret has {} maps", ret.len());
-
-    // toDO
+    //if config.is_to_write {
+    //if let Err(e) = export_to_csv(maps) {
+    //error!("error exporting to csv. {e}");
+    //return Err(e);
+    //}
+    //}
 
     return Ok(());
 }
@@ -106,13 +111,16 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<HashMap<String, Tra
     ));
 
     info!("output file is {:?}", output_file);
-    let mut wtr = csv::Writer::from_path(output_file)?;
+    let mut wtr = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_path(output_file)?;
 
-    let mut maps: HashMap<String, Trajectory> = HashMap::new();
+    let mut map: HashMap<String, Trajectory> = HashMap::new();
 
-    let mut count = 0;
+    let mut count:u64 = 0;
 
     for result in rdr.deserialize().skip(1) {
+        count += 1;
         let record: Record = result?;
         if !is_valid_record(&record) {
             continue;
@@ -127,15 +135,23 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<HashMap<String, Tra
         //}
         //
         let mmsi = record.mmsi;
+        let dt = match NaiveDateTime::parse_from_str(&record.timestamp, "%d/%m/%Y %T") {
+            Ok(v) => v,
+            Err(e) => {
+                error!("parsing timestamp failed.{e}");
+                return Err(e.into());
+            }
+        };
+
         let point = STPoint {
-            timestamp: record.timestamp,
+            timestamp: dt.timestamp(),
             lat: record.lat,
             lon: record.lon,
             sog: record.sog.unwrap(), // safe to unwrap. already checked.
             cog: record.cog.unwrap(),
         };
 
-        match maps.get_mut(&mmsi) {
+        match map.get_mut(&mmsi) {
             Some(v) => {
                 v.trace.push(point);
             }
@@ -145,17 +161,42 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<HashMap<String, Tra
                     ship_type: record.ship_type,
                     trace: vec![point],
                 };
-                maps.insert(mmsi, tra);
+                map.insert(mmsi, tra);
             }
         }
 
-        count += 1;
+    }
+
+    if is_to_write {
+        for (_, value) in map.iter() {
+            wtr.serialize(CRecord {
+                mmsi: value.mmsi.to_string(),
+                trace: value
+                    .trace
+                    .iter()
+                    .map(|x| x.to_string() + "-")
+                    .collect::<String>(),
+            })?;
+        }
     }
 
     wtr.flush()?;
+    // TODO
+    //for (key, val) in map.iter_mut() {
+    //let trace = val.trace;
+    //let last = &trace[0];
+    //let split_idx = 0;
+    //for i in 1..trace.len() {
+    //if trace[i].timestamp - last.timestamp > INTERVAL {
+
+    //}
+    //}
+    //println!("{index}");
+    //}
+
     info!("{:?} has {} records passed.", path, count);
 
-    Ok(maps)
+    Ok(map)
 }
 
 fn is_valid_record(record: &Record) -> bool {
@@ -201,4 +242,31 @@ fn is_valid_record(record: &Record) -> bool {
     // TODO
 
     true
+}
+
+//fn merge_maps(maps: Vec<HashMap<String, Trajectory>>) -> Result<HashMap<String, Trajectory>> {
+
+//Ok(ret)
+//}
+
+fn export_to_csv(maps: Vec<HashMap<String, Trajectory>>) -> Result<()> {
+    let output_file = Path::new(OUT_DIR).join(format!(
+        "{}_{}",
+        //path.file_name().unwrap_or_default().to_string_lossy(),
+        "hello",
+        OUT_FILE_SUFFIX,
+    ));
+
+    info!("output file is {:?}", output_file);
+    let mut wtr = csv::Writer::from_path(output_file)?;
+
+    for map in maps {
+        for (_, value) in map {
+            wtr.serialize(value)?;
+        }
+    }
+
+    wtr.flush()?;
+
+    Ok(())
 }

@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum NavigationalStatus {
     #[serde(rename = "Unknown value")]
@@ -28,7 +30,7 @@ pub enum NavigationalStatus {
     Other,
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ShipType {
     Tanker,
     Cargo,
@@ -43,7 +45,6 @@ pub enum ShipType {
     Medical,
     #[serde(alias = "Anti-pollution")]
     AntiPollution,
-    Other,
     #[serde(alias = "Towing long/wide")]
     Towing,
     Pilot,
@@ -60,6 +61,8 @@ pub enum ShipType {
     #[serde(alias = "Spare 2")]
     Spare,
     Undefined,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -125,18 +128,34 @@ pub struct Record {
     d: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct STPoint {
-    pub timestamp: String,
+    pub timestamp: i64,
     pub lat: f64,
     pub lon: f64,
     pub sog: f64,
     pub cog: f64,
 }
 
-#[derive(Debug)]
+impl fmt::Display for STPoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {},{},{},{}",
+            self.timestamp, self.lat, self.lon, self.sog, self.cog
+        )
+    }
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct Trajectory {
     pub mmsi: String,
     pub ship_type: ShipType,
     pub trace: Vec<STPoint>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CRecord {
+    pub mmsi: String,
+    pub trace: String,
 }
