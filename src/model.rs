@@ -43,7 +43,6 @@ pub enum ShipType {
     Medical,
     #[serde(alias = "Anti-pollution")]
     AntiPollution,
-    Other,
     #[serde(alias = "Towing long/wide")]
     Towing,
     Pilot,
@@ -60,6 +59,8 @@ pub enum ShipType {
     #[serde(alias = "Spare 2")]
     Spare,
     Undefined,
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -97,7 +98,7 @@ pub enum DataSource {
 // example: 23/06/2017 00:00:00,Base Station,2194005,56.344267,4.272000,Unknown value,,,,,Unknown,,,Undefined,,,,Surveyed,,,,AIS,,,,
 // 325315:23/06/2017 00:44:23,Class A,305484000,56.134323,11.474578,Under way using engine,0.0,6.8,268.1,264,9428217,V2EN3,ICE MOON,Cargo,,24,129,GPS,6.8,AARHUS,23/06/2017 08:00:00,AIS,109,20,12,12
 pub struct Record {
-    timestamp: String,
+    pub timestamp: String,
     type_mobile: String,
     pub mmsi: String,
     pub lat: f64,
@@ -123,4 +124,15 @@ pub struct Record {
     b: String,
     c: String,
     d: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ZRecord {
+    pub timestamp: String,
+    pub mmsi: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub sog: f64,
+    pub cog: f64,
+    pub ship_type: ShipType,
 }

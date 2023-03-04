@@ -2,14 +2,14 @@ mod model;
 
 use anyhow::{Error, Result};
 use clap::{Arg, ArgAction, Command};
-use model::Record;
+use log::{debug, error, info};
 use model::{NavigationalStatus, ShipType};
+use model::{Record, ZRecord};
 use rayon::prelude::*;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use log::{info, error, debug};
 
 static OUT_DIR: &str = "dist";
 
@@ -101,9 +101,19 @@ pub fn process_file(path: &str, is_to_write: bool) -> Result<()> {
         //debug!("ship type is {:?}", record.ship_type);
         //debug!("record is {:?}", record);
         //debug!("data source is {:?}", record.data_source);
+        //
+        let data = ZRecord {
+            timestamp: record.timestamp,
+            mmsi: record.mmsi,
+            lat: record.lat,
+            lon: record.lon,
+            sog: record.sog.unwrap(), // safe to unwarp
+            cog: record.cog.unwrap(),
+            ship_type: record.ship_type,
+        };
 
         if is_to_write {
-            wtr.serialize(record)?;
+            wtr.serialize(data)?;
         }
 
         count += 1;
