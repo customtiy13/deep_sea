@@ -50,9 +50,9 @@ def run():
     i = 0
     for root, _, files in os.walk(DATA_DIR):
         for file in sorted(files):
-            i += 1
-            if i > 1:
-                break
+            # i += 1
+            # if i > 1:
+                # break
             file_path = os.path.join(root, file)
             process_file(file_path)
             # print(file_path)
@@ -61,8 +61,6 @@ def run():
 
     # delete useless items
     clean_dict()
-    print(RESULT["538005505"])
-    print("-------------------")
     export_to_pkl(RESULT)
 
 
@@ -125,7 +123,6 @@ def clean_dict():
         # [[[mmsi:~], [mmsi:~]], [[], []]]
         # print(ret)
 
-
         # 2. filter
         ret = filter_voyages(ret)
 
@@ -136,9 +133,27 @@ def clean_dict():
         ret = down_sample(ret)
 
         # 5. split long into short
+        ret = split_to_short(ret)
 
-        # the end
-        RESULT[key] = ret
+        if ret:
+            # the end
+            RESULT[key] = ret
+
+
+def split_to_short(values):
+    result = []
+    for voyage in values:
+        split_idx = 0
+        last = voyage[0]
+        for i in range(1, len(voyage)):
+            diff = compare_time_diff(last[0], voyage[i][0])
+            if diff > 20:
+                # split
+                result.append(voyage[split_idx: i])
+                split_idx = i
+                last = voyage[i]
+        result.append(voyage[split_idx:i])
+    return result
 
 
 def down_sample(values):
@@ -148,7 +163,7 @@ def down_sample(values):
         ret = [start]
         for i in range(1, len(voyage)):
             diff = compare_time_diff(start[0], voyage[i][0])
-            if diff >= 0.1:
+            if diff >= 10 / 60: # TODO. 10 miniutes
                 ret.append(voyage[i])
                 start = voyage[i]
         result.append(ret)
