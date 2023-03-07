@@ -1,58 +1,95 @@
 import os
 import csv
 import pickle
+import math
 import logging
 import numpy as np
+
 import pandas as pd
 from datetime import datetime
 from haversine import haversine
+from haversine import haversine_vector
 
 import matplotlib.pyplot as plt
 
-from mpl_toolkits.basemap import Basemap
 
 DATE_FORMAT_STR = "%d/%m/%Y %H:%M:%S"
-DATA_DIR = "/home/mys/master/papers/sea/data/deep_sea/vanilla"
+DATA_DIR = "/home/mys/master/papers/sea/data/deep_sea/clean_test"
 DICT = {}  # save all the results
 RESULT = {}
 LIMIT = 1.852
-D = np.load("./coastal_basemap_data.npy", allow_pickle=True).tolist()
+# D = np.load("./coastal_basemap_data.npy", allow_pickle=True).tolist()
+F = np.load("./author_coastal_basemap_data.npy", allow_pickle=True)
 
 
-def save_coastal_data(path, resolution="f"):
-    m = Basemap(
-        projection="merc",
-        llcrnrlon=10,
-        llcrnrlat=55.5,
-        urcrnrlon=13.0,
-        urcrnrlat=58.0,
-        resolution=resolution,
+def save_coastal_data2(path):
+    with open("dma_coastline_polygons.pkl", "rb") as f:
+        a = pickle.load(f)
+        a = np.concatenate(a, axis=0)
+        func = np.vectorize(math.radians)
+        a = func(a)
+        np.save(os.path.join(path, "author_coastal_basemap_data.npy"), a)
+
+
+# def save_coastal_data(path, resolution="f"):
+# m = Basemap(
+# projection="merc",
+# llcrnrlon=10,
+# llcrnrlat=55.5,
+# urcrnrlon=13.0,
+# urcrnrlat=58.0,
+# resolution=resolution,
+# )
+
+# coast = m.drawcoastlines()
+
+# coordinates = np.vstack(coast.get_segments())
+# lons, lats = m(coordinates[:, 0], coordinates[:, 1], inverse=True)
+
+# D = {"lons": lons, "lats": lats}
+# np.save(os.path.join(path, "coastal_basemap_data.npy"), D)
+
+
+# def distance_from_coast(lon, lat, degree_in_km=111.12):
+# lons, lats = D["lons"], D["lats"]
+
+# dists = np.sqrt((lons - lon) ** 2 + (lats - lat) ** 2)
+
+# return np.min(dists) * degree_in_km
+
+
+def distance_from_coast2(lon, lat):
+    # a = np.zeros(F.shape) + [math.radians(lat), math.radians(lon)]
+    a = np.array([math.radians(lat), math.radians(lon)]).reshape(1, -1)
+    lat1 = a[:, 0]
+    lon1 = a[:, 1]
+    lat2 = F[:, 0]
+    lon2 = F[:, 1]
+
+    diff_lat = lat1 - lat2
+    diff_lon = lon1 - lon2
+    d = (
+        np.sin(diff_lat / 2) ** 2
+        + np.cos(lat1) * np.cos(lat2) * np.sin(diff_lon / 2) ** 2
     )
 
-    coast = m.drawcoastlines()
-
-    coordinates = np.vstack(coast.get_segments())
-    lons, lats = m(coordinates[:, 0], coordinates[:, 1], inverse=True)
-
-    D = {"lons": lons, "lats": lats}
-    np.save(os.path.join(path, "coastal_basemap_data.npy"), D)
+    b = min(2 * 6371 * np.arcsin(np.sqrt(d)))
+    return b
 
 
-def distance_from_coast(lon, lat, degree_in_km=111.12):
-    lons, lats = D["lons"], D["lats"]
+def helper(row):
+    lat = row[0]
+    lon = row[1]
+    t_lat = row[2]
+    t_lon = row[3]
 
-    dists = np.sqrt((lons - lon) ** 2 + (lats - lat) ** 2)
-
-    return np.min(dists) * degree_in_km
+    return haversine((lat, lon), (t_lat, t_lon))
 
 
 def run():
     i = 0
     for root, _, files in os.walk(DATA_DIR):
         for file in sorted(files):
-            # i += 1
-            # if i > 1:
-                # break
             file_path = os.path.join(root, file)
             process_file(file_path)
             # print(file_path)
@@ -89,7 +126,7 @@ def process_file(file_path):
                 row[4],
                 row[5],
             )
-            if distance_from_coast(lon, lat) < LIMIT:
+            if distance_from_coast2(lon, lat) < LIMIT:
                 continue
             # partial filter
             value = [timestamp, lat, lon, sog, cog]
@@ -135,7 +172,7 @@ def clean_dict():
         # 5. split long into short
         ret = split_to_short(ret)
 
-        if ret:
+        if ret and ret[0]:
             # the end
             RESULT[key] = ret
 
@@ -149,7 +186,7 @@ def split_to_short(values):
             diff = compare_time_diff(last[0], voyage[i][0])
             if diff > 20:
                 # split
-                result.append(voyage[split_idx: i])
+                result.append(voyage[split_idx:i])
                 split_idx = i
                 last = voyage[i]
         result.append(voyage[split_idx:i])
@@ -163,7 +200,7 @@ def down_sample(values):
         ret = [start]
         for i in range(1, len(voyage)):
             diff = compare_time_diff(start[0], voyage[i][0])
-            if diff >= 10 / 60: # TODO. 10 miniutes
+            if diff >= 10 / 60:  # TODO. 10 miniutes
                 ret.append(voyage[i])
                 start = voyage[i]
         result.append(ret)
@@ -216,7 +253,7 @@ def compare_time_diff(atime, btime):
     return diff_in_hours
 
 
-OUTPUT_FILE = "ais_records.pkl"
+OUTPUT_FILE = "clean_test_ais_records.pkl"
 
 
 def export_to_pkl(records):
@@ -228,5 +265,5 @@ def export_to_pkl(records):
 
 if __name__ == "__main__":
     # run()
-    # save_coastal_data("./")
+    # save_coastal_data2("./")
     run()
