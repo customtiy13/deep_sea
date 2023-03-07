@@ -2,6 +2,7 @@ import os
 import csv
 import pickle
 import math
+import torch
 import logging
 import numpy as np
 
@@ -13,13 +14,15 @@ from haversine import haversine_vector
 import matplotlib.pyplot as plt
 
 
+DEVICE=torch.device("cpu")
 DATE_FORMAT_STR = "%d/%m/%Y %H:%M:%S"
 DATA_DIR = "/home/mys/master/papers/sea/data/deep_sea/clean_test"
 DICT = {}  # save all the results
 RESULT = {}
 LIMIT = 1.852
 # D = np.load("./coastal_basemap_data.npy", allow_pickle=True).tolist()
-F = np.load("./author_coastal_basemap_data.npy", allow_pickle=True)
+F = torch.from_numpy(np.load("./author_coastal_basemap_data.npy", allow_pickle=True)).to(DEVICE)
+
 
 
 def save_coastal_data2(path):
@@ -58,22 +61,24 @@ def save_coastal_data2(path):
 # return np.min(dists) * degree_in_km
 
 
-def distance_from_coast2(lon, lat):
+def distance_from_coast2(all, seq_len):
     # a = np.zeros(F.shape) + [math.radians(lat), math.radians(lon)]
-    a = np.array([math.radians(lat), math.radians(lon)]).reshape(1, -1)
-    lat1 = a[:, 0]
-    lon1 = a[:, 1]
+    # a = torch.from_numpy(np.array([math.radians(lat), math.radians(lon)]).reshape(1, -1)).to(DEVICE)
+    all = np.zeros((seq_len, F.shape[0], 2)) + all.reshape(seq_len, -1, 2)
+    a = torch.from_numpy(all).to(DEVICE)
+    lat1 = a[:,:, 0]
+    lon1 = a[:,:, 1]
     lat2 = F[:, 0]
     lon2 = F[:, 1]
 
     diff_lat = lat1 - lat2
     diff_lon = lon1 - lon2
     d = (
-        np.sin(diff_lat / 2) ** 2
-        + np.cos(lat1) * np.cos(lat2) * np.sin(diff_lon / 2) ** 2
+        torch.sin(diff_lat / 2) ** 2
+        + torch.cos(lat1) * torch.cos(lat2) * torch.sin(diff_lon / 2) ** 2
     )
 
-    b = min(2 * 6371 * np.arcsin(np.sqrt(d)))
+    b = torch.min(2 * 6371 * torch.arcsin(torch.sqrt(d)), -1).values
     return b
 
 
@@ -114,6 +119,10 @@ def process_file(file_path):
     }
     """
     print(f"in processing file {file_path}")
+    all = []
+    data = []
+    mmsis = []
+    count = 1
     with open(file_path) as f:
         rdr = csv.reader(f, delimiter=",")
         next(rdr)
@@ -126,11 +135,49 @@ def process_file(file_path):
                 row[4],
                 row[5],
             )
-            if distance_from_coast2(lon, lat) < LIMIT:
-                continue
-            # partial filter
             value = [timestamp, lat, lon, sog, cog]
-            DICT.setdefault(mmsi, []).append(value)
+            point = [math.radians(lat), math.radians(lon)]
+            all.append(point)
+            data.append(value)
+            mmsis.append(mmsi)
+            if len(all) == 128:
+                count += 1
+                mm = distance_from_coast2(np.asarray(all), len(all))
+                mm = (mm < LIMIT).tolist()
+                for i, v in enumerate(mm):
+                    if mm[i]:
+                        continue
+                    DICT.setdefault(mmsis[i], []).append(data[i])
+                all = []
+                data = []
+                mmsis = []
+                print(f"current count is {count}")
+    if all:
+        mm = distance_from_coast2(np.asarray(all), len(all))
+        mm = (mm < LIMIT).tolist()
+        for i, v in enumerate(mm):
+            if mm[i]:
+                continue
+            DICT.setdefault(mmsis[i], []).append(data[i])
+        all = []
+        data = []
+        mmsis = []
+    
+    # with open(file_path) as f:
+        # rdr = csv.reader(f, delimiter=",")
+        # next(rdr)
+        # for i, row in enumerate(rdr):
+            # if mm[i]:
+                # continue
+            # timestamp, mmsi, lat, lon, sog, cog = (
+                # row[0],
+                # row[1],
+                # float(row[2]),
+                # float(row[3]),
+                # row[4],
+                # row[5],
+            # )
+            # DICT.setdefault(mmsi, []).append(value)
     # print(DICT["538005505"])
 
 
