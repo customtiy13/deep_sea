@@ -1,4 +1,5 @@
 import os
+import argparse
 import csv
 import pickle
 import math
@@ -14,15 +15,16 @@ from haversine import haversine_vector
 import matplotlib.pyplot as plt
 
 
-DEVICE=torch.device("cpu")
+DEVICE = torch.device("cpu")
 DATE_FORMAT_STR = "%d/%m/%Y %H:%M:%S"
-DATA_DIR = "/home/mys/master/papers/sea/data/deep_sea/clean_test"
+DATA_DIR = "/home/mys/master/papers/sea/data/deep_sea/clean_train"
 DICT = {}  # save all the results
 RESULT = {}
 LIMIT = 1.852
 # D = np.load("./coastal_basemap_data.npy", allow_pickle=True).tolist()
-F = torch.from_numpy(np.load("./author_coastal_basemap_data.npy", allow_pickle=True)).to(DEVICE)
-
+F = torch.from_numpy(
+    np.load("./author_coastal_basemap_data.npy", allow_pickle=True)
+).to(DEVICE)
 
 
 def save_coastal_data2(path):
@@ -66,8 +68,8 @@ def distance_from_coast2(all, seq_len):
     # a = torch.from_numpy(np.array([math.radians(lat), math.radians(lon)]).reshape(1, -1)).to(DEVICE)
     all = np.zeros((seq_len, F.shape[0], 2)) + all.reshape(seq_len, -1, 2)
     a = torch.from_numpy(all).to(DEVICE)
-    lat1 = a[:,:, 0]
-    lon1 = a[:,:, 1]
+    lat1 = a[:, :, 0]
+    lon1 = a[:, :, 1]
     lat2 = F[:, 0]
     lon2 = F[:, 1]
 
@@ -91,12 +93,23 @@ def helper(row):
     return haversine((lat, lon), (t_lat, t_lon))
 
 
-def run():
-    i = 0
+def run(args):
+    global DICT
+    idx = -1
+    if args.filename:
+        with open(args.filename, "rb") as f:
+            DICT = pickle.load(f)
+            idx = int(args.filename)
+
     for root, _, files in os.walk(DATA_DIR):
-        for file in sorted(files):
+        for i, file in enumerate(sorted(files)):
+            if i < idx + 1:
+                continue
             file_path = os.path.join(root, file)
             process_file(file_path)
+            if i % 20 == 0:
+                with open(str(i), "wb") as f:
+                    pickle.dump(DICT, f)
             # print(file_path)
             # break  # TODO, delete me
     # process_file("/home/mys/master/papers/sea/data/deep_sea/vanilla/a")
@@ -140,7 +153,7 @@ def process_file(file_path):
             all.append(point)
             data.append(value)
             mmsis.append(mmsi)
-            if len(all) == 128:
+            if len(all) == 2048:
                 count += 1
                 mm = distance_from_coast2(np.asarray(all), len(all))
                 mm = (mm < LIMIT).tolist()
@@ -151,7 +164,7 @@ def process_file(file_path):
                 all = []
                 data = []
                 mmsis = []
-                print(f"current count is {count}")
+                # print(f"current count is {count}")
     if all:
         mm = distance_from_coast2(np.asarray(all), len(all))
         mm = (mm < LIMIT).tolist()
@@ -162,23 +175,6 @@ def process_file(file_path):
         all = []
         data = []
         mmsis = []
-    
-    # with open(file_path) as f:
-        # rdr = csv.reader(f, delimiter=",")
-        # next(rdr)
-        # for i, row in enumerate(rdr):
-            # if mm[i]:
-                # continue
-            # timestamp, mmsi, lat, lon, sog, cog = (
-                # row[0],
-                # row[1],
-                # float(row[2]),
-                # float(row[3]),
-                # row[4],
-                # row[5],
-            # )
-            # DICT.setdefault(mmsi, []).append(value)
-    # print(DICT["538005505"])
 
 
 def clean_dict():
@@ -300,7 +296,7 @@ def compare_time_diff(atime, btime):
     return diff_in_hours
 
 
-OUTPUT_FILE = "clean_test_ais_records.pkl"
+OUTPUT_FILE = "clean_train_ais_records.pkl"
 
 
 def export_to_pkl(records):
@@ -310,7 +306,18 @@ def export_to_pkl(records):
         pickle.dump(records, f)
 
 
+def init():
+    parser = argparse.ArgumentParser(
+        prog="my",
+        description="clean test",
+    )
+    parser.add_argument("-f", "--filename")
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
+    args = init()
     # run()
     # save_coastal_data2("./")
-    run()
+    run(args)
